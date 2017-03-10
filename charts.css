@@ -1,0 +1,59 @@
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+  opacity: 0.2;
+}
+.tick line { opacity: 0.1; }
+.axis text {
+  font: 10px sans-serif;
+}
+.line path {
+  fill: none;
+  stroke-width: 2;
+}
+.entry {
+  opacity: 0.4;
+}
+.entry:hover, .entryselected {
+  opacity: 0.8;
+}
+.entry .entry-fill {
+  fill: white;
+  opacity: 0;
+}
+.overlay {
+  opacity: 0;
+}
+#popup {
+  position: absolute;
+  top: 100px;
+  right: 100px;
+  padding: 4px 4px 4px 4px;
+  border: 1px solid rgba(0,0,0,.15);
+  box-shadow: 0 6px 12px rgba(0,0,0,.175);
+  background-color: rgba(230,230,230,.7);
+}
+#popup tr {
+  text-align: center;
+}
+#popup tr td:first-child {
+  text-align: left;
+}
+#popup td {
+  padding-left: 4px;
+}
+/*
+input[placeholder] { 
+  color: #333;
+}
+input::-webkit-input-placeholder { 
+  color: #333;
+}
+input::-moz-placeholder { 
+  color: #333;
+}
+input:-ms-input-placeholder { 
+  color: #333;
+} */
