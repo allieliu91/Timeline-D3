@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+
+	<title>Chart</title>
+
+	<link rel="stylesheet" href="charts.css">
+	<link rel="stylesheet" href="css/bootstrap.min.css">
+	<link rel="stylesheet" href="css/bootstrap-datepicker3.min.css">
+	<link rel="stylesheet" href="css/select2.min.css">
+	<link rel="stylesheet" href="css/select2-bootstrap.min.css">
+
+	<style type="text/css">
+		.inputs {
+			width: 100%;
+		}
+
+	</style>
+
+</head>
+<body>
+
+	
+	<div class="row">
+		<div class="col-md-6 col-sm-12">
+			
+			<select class="inputs" id="channel-name-input" multiple="multiple"></select>
+			<select class="inputs" id="item-name-input" multiple="multiple"></select>
+		</div>			
+		<div class="col-md-6 col-sm-12">			
+			<div class="inputs input-group date" id="date-from-input">
+		      <input type="text" class="form-control"><span class="input-group-addon"><i class="glyphicon glyphicon-th"></i></span>
+		    </div>
+		    <div class="inputs input-group date" id="date-to-input">
+		      <input type="text" class="form-control"><span class="input-group-addon"><i class="glyphicon glyphicon-th"></i></span>
+		    </div>
+		</div>		    
+	</div>
+
+
+	<div class="row">
+		<div style="position: absolute; width: 100%">
+			<div id="chart">
+				<p>...........Loading data...</p>
+				<div style="width: 200px; height: 100px; background-image: url('spinner.gif'); background-position: center; background-repeat: no-repeat;"></div>
+			</div>
+			<div id="popup" style="display: none;"></div>
+		</div>
+	</div>	
+
+	<script src="js/jquery.js"></script>
+	<script src="js/d3.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/bootstrap-datepicker.min.js"></script>
+	<script src="js/crossfilter.v1.min.js"></script>
+	<script src="js/select2.min.js"></script>
+	<script src="barchart.js"></script>
+
+<script type="text/javascript">
+		
+	var cumulativeData = [], filesToLoad;
+
+	var splitDate = new Date('10/1/2016');
+
+	var origin = window.location.origin;
+	if (origin === null || origin === 'null') origin = '';
+	else origin = origin + '/';
+
+	console.log(origin,  window.location);	
+
+	jQuery('.inputs').hide();
+
+	d3.json(origin + 'list/', function( data ){
+		console.log('files to load:',data);
+		filesToLoad = data.map( function(d){ return origin + 'data/' + d });
+
+		loadFile( filesToLoad.shift() );
+	});
+
+	function loadFile( fileName ){
+
+		d3.csv( fileName, function(data){
+			console.log('loaded', fileName);
+
+			cumulativeData = cumulativeData.concat( data );
+
+			if (filesToLoad.length) loadFile( filesToLoad.shift() );
+			else {
+				//createChart( cumulativeData );
+				d3.csv( 'list.csv', function(list){
+
+					//d3.csv( 'data.csv', function(data){
+						setFilters( cumulativeData, list );
+
+					//});	
+
+				});	
+
+			}
+		});		
+
+	} 
+
+// Item_Id, channel_id, Twitter_account
+/*
+jQuery(function(){
+
+	jQuery('.inputs').hide();
+
+	d3.csv( 'list.csv', function(list){
+
+		d3.csv( 'data.csv', function(data){
+			setFilters( data, list );
+
+		});	
+
+	});	
+}); */
+
+function setFilters( data, list ){
+
+	data.forEach(function(d, i) {
+      	d.index = i;
+      	d.date = new Date(d.Date);
+      var tmp = list.find( function(l){ return l.Channel_id == d.channel_id});
+      	d.channel_id = tmp ? tmp.Channel_Name : '';
+      	d.channel_date = tmp ? new Date(tmp.Creation_Date) : d.date;
+		tmp = list.find( function(l){ return l.Item_Id == d.Item_Id});
+
+		if (tmp) {
+			d.Item_Id = tmp.Item_Name;
+	    	var partners = tmp.Media_Partner.split(',');
+	//console.log('partners', partners);
+	      	d.Category = partners.indexOf( d.Twitter_account ) > -1 ? '1' : '';
+		}
+      	else {
+      		d.Item_Id = '';
+      		d.Category = '';
+      	}
+
+  	});
+
+  	data = data.filter( function(d){ return d.channel_id && d.Item_Id });
+
+	var chart, currChnls, items, channels = data.reduce( function(tot, val){
+
+		var obj = tot.find( function(d){ return val.channel_id === d.name });
+		if (!obj) {
+			obj = { name: val.channel_id, created: val.channel_date, items: [], count: 1, tw: 0, retw: 0 };
+			tot.push( obj );
+		}
+		else obj.count++;
+
+		var item = obj.items.find( function(d){ return val.Item_Id === d.name });
+		if (!item) {
+			item = {name: val.Item_Id, count: 1, tw: 0, retw: 0};
+			obj.items.push( item );
+		}
+		else item.count++;
+
+		if (val.Category === '1'){
+			obj.tw++;
+			item.tw++;
+		} else {
+			obj.retw++;
+			item.retw++;
+		}
+
+		return tot;
+
+	}, []);
+
+	channels.forEach( function(ch){
+		ch.items.sort();
+	});
+	//channels.sort( function(a,b){ return a.created.getTime() - b.created.getTime() });
+	channels.sort( function(a,b){ return a.name - b.name });
+	
+
+	var $itemsSelect = jQuery("#item-name-input");
+	$itemsSelect.on("select2:select select2:unselect", function (e) { 
+					items = jQuery(this).val();
+					//console.log("select items", items);
+					chart.update(currChnls, items);
+				});
+
+	jQuery("#channel-name-input").show().select2({
+		theme: "bootstrap",
+		placeholder: 'Select a channels',
+	  	data: channels.map(function(ch){ return ch.name })
+	}).on("select2:select select2:unselect", function (e) { 
+		 
+		currChnls = jQuery(this).val();
+		console.log("select channels", currChnls);
+
+		if (currChnls && currChnls.length){
+			var currentItems = [];
+			currChnls.forEach( function(name){
+				currentItems = currentItems.concat( channels.find(function(ch){ return ch.name === name }).items.map(function(i){ return i.name }) );
+			});
+		//console.log("currentItems", currentItems);			
+			if (currentItems.length)
+				$itemsSelect.show().select2({
+					theme: "bootstrap",
+					 placeholder: 'Select an items',
+				  	data: currentItems
+				});
+			if (!chart) chart = createChart(data, currChnls);
+			else chart.update(currChnls, items || currentItems);
+		}
+	});
+
+	//createTree(channels);
+}
+
+function createTree(data){
+
+	var tree = { 
+		name: 'All channels', 
+		children: [
+			{
+				name: 'Channels, created before ' + splitDate.toString(),
+				children: data.filter( function(d){ return d.created.getTime() < splitDate.getTime() })
+			},
+			{
+				name: 'Channels, created after ' + splitDate.toString(),
+				children: data.filter( function(d){ return d.created.getTime() >= splitDate.getTime() })
+			}
+		]
+	};
+	tree.children.forEach( function(c){
+		c.children = c.children.map(function(d){
+			return {
+				name: d.name,
+				children: d.items.map( function(m){ return { name: m, value: 1 }})
+			}
+		})
+	});
+
+	console.log('tree', tree);
+
+		Treemap({
+	        data: tree,
+	        //x: 'date',        // property name for common x-coord
+	        selector: '#chart'  // CSS selector of parent container     
+	  	});	
+}
+
+function createChart(data, chnls){		  //console.log(data);
+
+  var startDate, oldStartDate, endDate, oldEndDate, currChnls = chnls, currentItems;
+
+  var noZeros = true;
+
+  var $datePickers = jQuery('.inputs.input-group.date');
+
+  var crossdata = crossfilter(data),
+    date = crossdata.dimension(function(d) { return d.date; }),
+    channel = crossdata.dimension(function(d) { return d.channel_id; }),
+    item = crossdata.dimension(function(d) { return d.Item_Id; }),
+    tweet = crossdata.dimension(function(d) { return d.Category; });
+
+  $datePickers.on('changeDate', function(e){
+	
+  	if (this.id === 'date-from-input') startDate = e.date ? e.date.getTime() : undefined;
+  	if (this.id === 'date-to-input') endDate = e.date ? e.date.getTime() : undefined;
+	
+  	if ( startDate && startDate !== oldStartDate){
+  		oldStartDate = startDate;
+  		update();
+  	}
+  	if ( endDate && endDate !== oldEndDate){
+  		oldEndDate = endDate;
+  		update();
+  	}
+  });
+
+	update(currChnls);
+
+  	return {
+  		
+  		update: update
+  	}
+
+    function update( chnls, items ){  //console.log('items', items, channel.top(10));
+
+    	if (arguments.length) {
+	    	if (chnls && chnls.length) {
+	    		//channel.filterAll();
+	    		channel.filterFunction( function(d){ return chnls.find( function(ch){ return d === ch; }) });
+	    	} else channel.filterAll();
+
+	    	if (items && items.length) {
+	    		//item.filterAll();
+	    		item.filterFunction( function(d){ return items.find( function(i){ return d === i; } ) });
+	    	} else item.filterAll();
+    	}
+
+		//tweet.filterAll();
+	    tweet.filterFunction( function(d){ return d === '1'});
+
+	  	var dates = date.group(d3.time.day);
+	  	var tweetted = dates.all().map(function(d){ return { date: d.key.getTime(), name: 'tweetted', value: d.value } });
+
+	  	//tweet.filterAll();
+	  	tweet.filterFunction( function(d){ return d === ''});
+
+	  	dates = date.group(d3.time.day);
+	  	var retweetted = dates.all().map(function(d){ return { date: d.key.getTime(), name: 'retweetted', value: d.value } });
+
+	  	var output =  merge(tweetted, retweetted);
+
+	  	output.sort(function(a,b){ return a.date - b.date; }); //decreasing
+	  	/*
+	  	if ( startDate || endDate ){
+    		date.filterFunction( function(d){ 
+    			//console.log((!startDate || d.getTime() >= startDate) && (!endDate || d.getTime() <= endDate) );
+    			return (!startDate || d.getTime() >= startDate) && (!endDate || d.getTime() <= endDate) 
+    		});
+    	} else date.filterAll(); */
+
+    	if (!noZeros){
+		  	// clean ends from zero data
+		  	var v = output[0], len = output.length;
+		  	while (v && (!v.tweetted && !v.retweetted && len || (!arguments.length && v.date < startDate) )){
+		  		output.shift();
+		  		v = output[0];
+		  		len--;
+		  	}
+		  	if (len){
+			  	v = output[len - 1];
+				while ( v && (len && !v.tweetted && !v.retweetted || (!arguments.length && v.date > endDate) )){
+			  		output.pop();
+			  		len--;
+			  		if ( len ) v = output[len - 1];
+			  	}
+		  	}
+    	}
+
+		if (arguments.length) updateDateBounds(output[0].date, output[ output.length - 1].date);
+
+	  	Chart({
+	        data: output,
+	        x: 'date',        // property name for common x-coord
+	        selector: '#chart', // CSS selector of parent container     
+	        charts: [{
+	                  title: 'tweetted/retweetted',
+	                  id: ['tweetted', 'retweetted'],
+	                  color: ['red', 'blue'],
+	                  type: 'doublebar'
+	                }]
+	  	});
+	}  	
+
+  	function updateDateBounds(start, end){ console.log('updated', start, end );
+  		startDate = start;
+  		endDate = end;
+  		$datePickers.datepicker('destroy');
+		$datePickers.show().datepicker({
+		    startDate: new Date(startDate),
+		    endDate: new Date(endDate),
+		    clearBtn: true
+		});//
+		$datePickers.each(function(){ 
+			if (this.id === 'date-from-input') jQuery(this).datepicker('update', new Date(startDate));
+  			if (this.id === 'date-to-input') jQuery(this).datepicker('update', new Date(endDate)); 
+		 });
+  	}
+
+  function merge(){ 
+    var result = [];
+    for (var arr=0; arr < arguments.length; arr++) {
+
+      arguments[arr].forEach(function(a){ 
+
+        var obj = result.find( function(d){ return d.date == a.date })
+        if (!obj) {
+
+        	if ( noZeros && !a.value ) return;
+
+          	obj = { date: a.date };
+          	result.push(obj);
+        }
+        obj[a.name] = a.value;
+      });
+    }
+    return result;
+  }
+}
+
+</script>
+
+</body>
+</html>

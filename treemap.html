@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+
+	<title>Chart</title>
+
+	<link rel="stylesheet" href="charts.css">
+	<link rel="stylesheet" href="css/bootstrap.min.css">
+	<link rel="stylesheet" href="css/bootstrap-datepicker3.min.css">
+	<link rel="stylesheet" href="css/select2.min.css">
+	<link rel="stylesheet" href="css/select2-bootstrap.min.css">
+
+	<style type="text/css">
+		.inputs {
+			width: 100%;
+		}
+
+		#chart div {
+			position: absolute;
+			border: 1px solid white;
+		}
+#chart p {
+  pointer-events: none;
+  margin-top: 4px;
+  color: black;
+}
+
+#chart .grandparent p {
+  font-weight: bold;
+  margin-top: 0px;
+}
+.parent p span {
+	color: blue;
+	font-weight: bold;
+	font-size: 100%;
+}
+.parent p span:first-child {
+	color: red;
+}
+.parent p span:last-child {
+	color: green;
+}
+.itemtable {
+	position: absolute;
+	right: 0;
+}
+.itemtable a {
+	cursor: pointer;
+}
+rect {
+  fill: none;
+  stroke: #fff;
+}
+
+div.parent,
+.grandparent div {
+  border: 2px solid white;
+}
+
+.grandparent div {
+  background-color: orange;
+  padding-left: 4px;
+}
+
+.grandparent:hover div {
+  background-color: #ee9700;
+}
+
+.children div.parent,
+.nochildren div.parent,
+.grandparent div {
+  	cursor: pointer;
+  	padding: 4px 4px 4px 4px;
+	overflow: hidden;
+	/*word-break: break-all;*/
+	text-overflow: ellipsis;  
+}
+
+.children div.parent {
+  background-color: rgba(200, 200, 200, .6);
+  opacity: .65;
+  text-align: center;
+}
+.children:hover div.parent {
+  background-color: rgba(200, 200, 200, .5);
+  opacity: 1;
+}
+
+.children:hover div.child {
+  background-color: #bbb;
+}
+.nochildren div.parent {
+	background-color: rgba(200, 200, 200, .5);
+	opacity: .65;
+	text-align: center;
+}
+.nochildren:hover div.parent {
+	background-color: #9b9;
+}
+
+	</style>
+
+</head>
+<body>
+
+	
+	<div class="row">
+		<div class="col-md-6 col-sm-12">			
+			<div class="inputs input-group date" id="date-from-input">
+		      <input type="text" class="form-control"><span class="input-group-addon"><i class="glyphicon glyphicon-th"></i></span>
+		    </div>
+		    <div class="inputs input-group date" id="date-to-input">
+		      <input type="text" class="form-control"><span class="input-group-addon"><i class="glyphicon glyphicon-th"></i></span>
+		    </div>
+		</div>	
+		<div class="col-md-6 col-sm-12">
+			
+			<select class="inputs" id="channel-name-input" multiple="multiple"></select>
+			<select class="inputs" id="item-name-input" multiple="multiple"></select>
+		</div>			
+	    
+	</div>
+
+
+	<div class="row">
+		<div style="position: absolute; width: 100%">
+			<div id="chart">
+				<p>...........Loading data...</p>
+				<div style="width: 200px; height: 100px; background-image: url('spinner.gif'); background-position: center; background-repeat: no-repeat;"></div>
+			</div>
+			<div id="popup" style="display: none;"></div>
+		</div>
+	</div>	
+
+	<script src="js/jquery.js"></script>
+	<script src="js/d3.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/bootstrap-datepicker.min.js"></script>
+	<script src="js/crossfilter.v1.min.js"></script>
+	<script src="js/select2.min.js"></script>
+	<script src="barchart.js"></script>
+	<script src="treemap.js"></script>
+
+<script type="text/javascript">
+		
+	var cumulativeData = [], filesToLoad;
+
+	//set date of split on channel creation date 
+	var splitDate = new Date('10/1/2016');
+
+	// detect corrent page URL
+	var origin = window.location.origin;
+	if (origin === null || origin === 'null') origin = '';
+	else origin = origin + '/';
+
+	//console.log(origin,  window.location);	
+
+	// hide search inputs
+	jQuery('.inputs').hide();
+
+	// retrieve a list of data files to load
+	d3.json(origin + 'list/', function( data ){
+		//console.log('files to load:',data);
+		filesToLoad = data.map( function(d){ return origin + 'data/' + d });
+
+		// start loading data
+		loadFile( filesToLoad.shift() );
+	});
+
+	// recursively load all data files
+	function loadFile( fileName ){
+
+		d3.csv( fileName, function(data){
+			console.log('loaded', fileName);
+
+			// collect all data into one array
+			cumulativeData = cumulativeData.concat( data );
+
+			if (filesToLoad.length) loadFile( filesToLoad.shift() );
+			else {
+				// if no files to load left -> load a list of partners
+				d3.csv( 'list.csv', function(list){
+
+					// on success -> shape data
+					setFilters( cumulativeData, list );
+
+				});	
+			}
+		});		
+	} 
+
+// data files need to have the first row with next column names:
+// Item_Id, channel_id, Twitter_account (UPDATE!!)
+
+// shape data
+function setFilters( data, list ){
+
+	// rach data entry
+	data.forEach(function(d, i) {
+		// add index
+      	d.index = i;
+      	// create JS Date object
+      	d.date = d3.time.day(new Date(d.Date));
+      	// check if channel ID in a list, set channel name and creation date. If not -> empty
+      var tmp = list.find( function(l){ return l.Channel_id == d.channel_id});
+      	d.channel_id = tmp ? tmp.Channel_Name : '';
+      	d.channel_date = tmp ? new Date(tmp.Creation_Date) : d.date;
+
+      	// check if ite ID in a list, set item name and Category, If not -> empty
+		tmp = list.find( function(l){ return l.Item_Id == d.Item_Id});
+
+		if (tmp) {
+			d.Item_Id = tmp.Item_Name;
+	    	var partners = tmp.Media_Partner.split(',');
+
+	      	d.Category = partners.indexOf( d.Twitter_account ) > -1 ? '1' : '';
+
+		}
+      	else {
+      		d.Item_Id = '';
+      		d.Category = '';
+      	}
+
+  	});
+
+	// remove all entries with empty channel or item name -> means was not in a list
+  	data = data.filter( function(d){ return d.channel_id && d.Item_Id });
+
+	var chart, currChnls, items, 
+	// create an Array of channel objects
+	channels = data.reduce( function(tot, val){
+		// check if channel object is already created
+		var obj = tot.find( function(d){ return val.channel_id === d.name });
+		if (!obj) {
+			// create new if not found
+			obj = { name: val.channel_id, created: val.channel_date, items: [], count: 1, tw: 0, retw: 0 };
+			tot.push( obj );
+		}
+		// increase counter if found
+		else obj.count++;
+
+		// same for item
+		var item = obj.items.find( function(d){ return val.Item_Id === d.name });
+		if (!item) {
+			item = {name: val.Item_Id, count: 1, tw: 0, retw: 0};
+			obj.items.push( item );
+		}
+		else item.count++;
+
+		// update and increase twitted/retwitted properties
+		if (val.Category === '1'){
+			obj.tw++;
+			item.tw++;
+		} else {
+			obj.retw++;
+			item.retw++;
+		}
+
+		return tot;
+
+	}, []);
+
+	// set performance indicator
+	channels.forEach( function(ch){
+		ch.indicator = (ch.retw || 0) / (ch.tw || 1) / ch.items.length;
+		if (ch.indicator === NaN) ch.indicator = 0;
+		//ch.items.sort();
+		if (ch.items.length && ch.items.some( function(d){ return !d.tw })) ch.zerotweets = true;
+		else ch.zerotweets = false;
+	});
+	//channels.sort( function(a,b){ return a.created.getTime() - b.created.getTime() });
+	// sort downgrade
+	channels.sort( function(a,b){ return b.indicator - a.indicator });
+	
+	// initialize items selector
+	var $itemsSelect = jQuery("#item-name-input");
+	$itemsSelect.on("select2:select select2:unselect", function (e) { 
+					items = jQuery(this).val();
+
+					chart.update(currChnls, items);
+				});
+
+	// initialize channel selector
+	jQuery("#channel-name-input").show().select2({
+		theme: "bootstrap",
+		placeholder: 'Search channels',
+	  	data: channels.map(function(ch){ return ch.name })
+	}).on("select2:select select2:unselect", function (e) { 
+		 
+		 // on channel selection change
+		currChnls = jQuery(this).val();
+		console.log("select channels", currChnls);
+
+		// if a list is not empty
+		if (currChnls && currChnls.length){
+			var currentItems = [];
+			// update a list of selected channels
+			currChnls.forEach( function(name){
+				// update items list
+				currentItems = currentItems.concat( channels.find(function(ch){ return ch.name === name }).items.map(function(i){ return i.name }) );
+			});
+			// items list is not empty
+			if (currentItems.length)
+				// show items selector
+				$itemsSelect.show().select2({
+					theme: "bootstrap",
+					 placeholder: 'Select an items',
+				  	data: currentItems
+				});
+			// create or update a barchart	
+			if (!chart) chart = createChart(data, currChnls);
+			else chart.update(currChnls, items || currentItems);
+		}
+	});
+
+	// create a treemap 
+	createTree(channels, data);
+}
+
+// treemap creation
+function createTree(data, allData){
+
+	// text format for dates
+	var	formatDate = d3.time.format("%b %d, %Y");
+	/*
+	// split tree on channel creation date
+	var tree = { 
+		name: 'All channels', 
+		children: [
+			{
+				name: 'Channels, created before ' + formatDate(splitDate), //.toString(),
+				children: data.filter( function(d){ return d.created.getTime() < splitDate.getTime() })
+			},
+			{
+				name: 'Channels, created after ' + formatDate(splitDate), //splitDate.toString(),
+				children: data.filter( function(d){ return d.created.getTime() >= splitDate.getTime() })
+			}
+		]
+	}; */
+
+	// buil a tree with spliting sorted Array onto 2 equal parts
+	var middle = Math.ceil(data.length/2);
+	var tree = { 
+		name: 'All channels', 
+		children: [
+			{
+				name: 'High Performers', 
+				children: data.filter( function(d, idx){ return idx < middle; })
+			},
+			{
+				name: 'Low Performers', 
+				children: data.filter( function(d, idx){ return idx >= middle; })
+			}
+		]
+	};	
+	tree.children.forEach( function(c){
+		c.children = c.children.map(function(d){
+			return {
+				name: d.name,
+				count: d.count,
+				tw: d.tw,
+				retw: d.retw,
+				zerotweets: d.zerotweets,
+				children: d.items.map( function(m){ return { name: m.name, value: m.count, count: m.count, tw: m.tw, retw: m.retw }})
+			}
+		})
+	});
+	// call for graphing function
+		Treemap({
+	        data: allData,
+	        tree: tree,
+	        //x: 'date',        // property name for common x-coord
+	        selector: '#chart'  // CSS selector of parent container     
+	  	});	
+}
+
+</script>
+
+</body>
+</html>
